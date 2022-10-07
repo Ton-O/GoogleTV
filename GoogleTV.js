@@ -60,11 +60,11 @@ let options = {
                 logger.info(JSON.stringify(NewCert))
     
             }
-            fs.writeFile('GoogleCert.pem',  JSON.stringify(NewCert.cert), function(err) {
+            fs.writeFile('./.ssh/GoogleCert.pem',  JSON.stringify(NewCert.cert), function(err) {
                 if (err) throw err;
                 console.log('Write cert complete');
                 });  
-            fs.writeFile('GoogleKey.pem',    JSON.stringify(NewCert.key), function(err) {
+            fs.writeFile('./.ssh/GoogleKey.pem',    JSON.stringify(NewCert.key), function(err) {
                 if (err) throw err;
                 console.log('Write key complete');
                 });  
@@ -104,11 +104,19 @@ let options = {
   })
 }
 async function LoadCert()
-{   fs.exists('GoogleCert.pem', function(exists) {
+{
+    fs.access('GoogleCert.pem', fs.constants.F_OK | fs.constants.W_OK, (err) => {
+        if (err) {
+            logger.info("No certificates to load")
+        } else {
+            logger.info("Certificates available, we can load them")
+            }
+        });
+    fs.exists('GoogleCert.pem', function(exists) {
 
         if (exists) {
-            let cert = fs.readFileSync('GoogleCert.pem')
-            let key = fs.readFileSync('GoogleKey.pem')
+            let cert = fs.readFileSync('./.ssh/GoogleCert.pem')
+            let key = fs.readFileSync('./.ssh/GoogleKey.pem')
             MyCert.cert = JSON.parse(cert)
             MyCert.key = JSON.parse(key)
             logger.info("Certificates loaded")
