@@ -105,14 +105,14 @@ let options = {
 }
 async function LoadCert()
 {
-    fs.access('GoogleCert.pem', fs.constants.F_OK | fs.constants.W_OK, (err) => {
+    fs.access('./.ssh/GoogleCert.pem', fs.constants.F_OK | fs.constants.W_OK, (err) => {
         if (err) {
             logger.info("No certificates to load")
         } else {
             logger.info("Certificates available, we can load them")
             }
         });
-    fs.exists('GoogleCert.pem', function(exists) {
+    fs.exists('./.ssh/GoogleCert.pem', function(exists) {
 
         if (exists) {
             let cert = fs.readFileSync('./.ssh/GoogleCert.pem')
