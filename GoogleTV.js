@@ -1,9 +1,5 @@
-//const path = require('path');
-//const metacontrol = require(path.join(__dirname,'metaController'));
-//const logger = require('logger').createLogger();
-
-const fs = require('fs');
-const { createLogger,transports,format} = require('winston');
+import fs from "fs";
+import { createLogger,transports,format} from 'winston';
 const { combine, timestamp, json } = format;
 const logger = createLogger({
     defaultMeta: { component: 'G-TV' },
@@ -20,29 +16,30 @@ const logger = createLogger({
        new transports.Console({ level: 'debug' })
      ]
  });
-// const {userLogger, paymentLogger} = require('./logger');
 
-const {AndroidRemote} = require('androidtv-remote')
-const {RemoteKeyCode} = require('androidtv-remote')
-const {RemoteDirection} = require('androidtv-remote')
-
-const express = require('express');
+import express from 'express';
 
 const server = express();
-const bodyParser = require('body-parser');
-const readline = require('readline/promises');
-const { stdin: input, stdout: output } = require('process');
+import bodyParser from 'body-parser';
+ import {
+    AndroidRemote,
+    RemoteKeyCode,
+    RemoteDirection
+} from "androidtv-remote";
 
+import { resolve } from "path";
 
 var Connections = []
 var MyandroidRemote;
 var MyHost;
 var MyCert = {cert: "",key:""}
 var NewCode
-//const rl = readline.createInterface(process.stdin);
+var answer;
+var ac;
+var Coderequested=false;
+
 
 async function getSession(MyHost,MyCerts) {
-_this = this 
 return new Promise(function (resolve, reject) {
 
     let host = MyHost 
@@ -51,126 +48,95 @@ return new Promise(function (resolve, reject) {
     remote_port : 6466,
     name : 'androidtv-remote', 
     cert : MyCerts}
-    _this.MyandroidRemote = new AndroidRemote(host, options)
-
-    _this.MyandroidRemote.on('secret', async () => {
-        logger.info("Request received to enter secret code")
-        while (NewCode == undefined)
-            {
-                 await ReadCode()
-            }
-
-        _this.MyandroidRemote.sendCode(NewCode);
-        logger.info(`Request answered with  secret code ${NewCode}`)
-        let NewCert = MyCert;
-        if (NewCert.key.length == 0)  { 
-            logger.info("Need to get new certificate")
-            NewCert = _this.MyandroidRemote.getCertificate();
-            logger.info(`Writing certificates to .ssh`)    
-            fs.writeFile('/opt/meta/.ssh/GoogleCert.pem',  JSON.stringify(NewCert.cert), function(err) {
-                if (err) throw err;
-                logger.info('Write cert complete');
-                });  
-            fs.writeFile('/opt/meta/.ssh/GoogleKey.pem',    JSON.stringify(NewCert.key), function(err) {
-                if (err) throw err;
-                logger.info('Write key complete');
-                });  
+    MyandroidRemote = new AndroidRemote(host, options)
+    var rl;
+    MyandroidRemote.on('secret', () => {
+        logger.debug(`We need a new secret; provide this via web interface port 6468 please`);
+        Coderequested=true;                 // set signal that we need a secret code (provided via web-interface of this container)
         }
-    });
+    )
 
-    _this.MyandroidRemote.on('powered', (powered) => {
+    MyandroidRemote.on('powered', (powered) => {
         logger.debug(`Powered: ${powered}`);
     });
 
-    _this.MyandroidRemote.on('volume', (volume) => {
+    MyandroidRemote.on('volume', (volume) => {
         logger.debug(`Volume: ${volume.level} / ${volume.maximum} | Muted : " + ${volume.muted}`);
     });
 
-    _this.MyandroidRemote.on('current_app', (current_app) => {
+    MyandroidRemote.on('current_app', (current_app) => {
         logger.debug(`Current App : ${current_app}`);
     });
 
-    _this.MyandroidRemote.on('error', (error) => {
+    MyandroidRemote.on('error', (error) => {
         logger.debug(`Error: ${error}`);
     });
 
-    _this.MyandroidRemote.on('unpaired', () => {
+    MyandroidRemote.on('unpaired', () => {
         logger.debug(`Unpaired`);
     });
 
-    _this.MyandroidRemote.on('ready',  () => {
+    MyandroidRemote.on('ready',  () => {
         logger.debug(`Connection with GoogleTV is ready`);
-        resolve( _this.MyandroidRemote)
-
-        //        await new Promise(resolve => setTimeout(resolve, 2000));
+        resolve(MyandroidRemote)
     });
-    _this.MyandroidRemote.start().then (() => {
+    MyandroidRemote.start().then (() => {
     })
     
   })
 }
 
-async function ReadCode()
+async function FillInCodeRequest(code)
 {
-try {
-    logger.info(`Obtaining secret Code (either from console or through post)`)
-    const ac = new AbortController();
-    const signal = ac.signal;
-    
-      const rl = readline.createInterface({ input, output });
-      const timeoutInSeconds = 10;
-      setTimeout(() => ac.abort(), timeoutInSeconds * 1000);
-      try {
-        const answer = await rl.question('Please provide the code shown on your TV', { signal });
-        NewCode = answer;
-        logger.info(`${answer.trim()} received`);
-      } catch(err) {
-        let message = '';
-        if (NewCode != undefined) {
-            message = "Received code online"
-        }
-        else 
-            if(err.code === 'ABORT_ERR' ) {
-                message = `Timeout waiting for secret code. Try again within ${timeoutInSeconds} seconds.`;
-            }
-            else
-                message = "Error occurred: " + err;
-        logger.info(message);
-      } finally {
-        rl.close();
-      }
+    logger.info("Sending code");
+    logger.info(code);
+    MyandroidRemote.sendCode(code);
+    logger.info("Need to get new certificate")
+    let NewCert = MyCert;
+    if (NewCert.key.length == 0)  { 
+        logger.info("Need to get new certificate")
+        NewCert = MyandroidRemote.getCertificate();
+        logger.info(`Writing certificates to .ssh`)    
+        fs.writeFile('/opt/meta/.ssh/GoogleCert.pem',  JSON.stringify(NewCert.cert), function(err) {
+            if (err) throw err;
+            logger.info('Write cert complete');
+            });  
+        fs.writeFile('/opt/meta/.ssh/GoogleKey.pem',    JSON.stringify(NewCert.key), function(err) {
+            if (err) throw err;
+            logger.info('Write key complete');
+            });  
     }
-    catch(err) {logger.info(`Error in Readcode ${err}`)}
+
 }
-
-
 async function LoadCert()
 {
     fs.access('/opt/meta/.ssh/GoogleCert.pem', fs.constants.F_OK | fs.constants.W_OK, (err) => {
         if (err) {
             logger.info("No certificates to load")
         } else {
-            logger.info("Certificates available, we can load them")
+            logger.info("Certificates available, we now load them")
             let cert = fs.readFileSync('/opt/meta/.ssh/GoogleCert.pem')
             let key = fs.readFileSync('/opt/meta/.ssh/GoogleKey.pem')
             MyCert.cert = JSON.parse(cert)
             MyCert.key = JSON.parse(key)
             logger.info("Certificates loaded")            }
         });
-/*    fs.exists('./.ssh/GoogleCert.pem', function(exists) {
+}
+async function Handle_NewSecretCode(Newcode) 
+{let MyMessage;
+    //http://192.168.73.194:6468/secret?secret=fced8e
+    logger.info(`Received secret code: ${Newcode}`);
+    if (Coderequested == true)
+    {    MyMessage =  "Thank you for code " + Newcode;
+        FillInCodeRequest(Newcode);
+        Coderequested = false;
+    }
+    else
+         MyMessage =  "Thanks for providing this code, but no pairing code was asked for....";        
 
-        if (exists) {
-            let cert = fs.readFileSync('./.ssh/GoogleCert.pem')
-            let key = fs.readFileSync('./.ssh/GoogleKey.pem')
-            MyCert.cert = JSON.parse(cert)
-            MyCert.key = JSON.parse(key)
-            logger.info("Certificates loaded")
-        }
-        else   
-            logger.info("No certificates to load")
+    logger.info(MyMessage);
+    return MyMessage;
 
-        }
-    )*/
 }
 
 async function main() {
@@ -186,22 +152,23 @@ async function main() {
         "friendlyDeviceName" : "GoogleTV"
         } 
 
-//		server.use(connCheck);   // Always check if connection is established already
-
-	server.listen(config.webPort, () => {
+	await server.listen(config.webPort, () => {
 		logger.info(`Webserver running on port: ${config.webPort}`);
-        //getSession(); // removed from here, as we now support multiple devices
     });
 		
 	server.get("/shutdown", (req, res, next) => {
         res.sendFile(__dirname + '/index.html');
     });
     server.post("/secret", async (req, res, next) => {
-	logger.info(`Received secret code: ${req.body.secret}`);
         NewCode=req.body.secret
-        res.json({"Status": "Thank you"});
+        let MyResult = await Handle_NewSecretCode(NewCode);
+        res.json({"Type": "Post", "Status": MyResult});        
     });
-
+    server.get("/secret", async (req, res, next) => {
+        NewCode=req.query.secret;
+        let MyResult = await Handle_NewSecretCode(NewCode);
+        res.json({"Status": MyResult});        
+    });
     server.get("/api",  (req, res, next) => {
         logger.info(`GTV: ${req.body}`)
         MyHost = req.body.host
@@ -217,11 +184,19 @@ async function main() {
 
 }
 
+async function sendPower() {
+    
+    GetConnection(MyHost).then  ((androidRemote) => {
+        logger.info("Toggling power");
+        androidRemote.sendPower();
+    })
+};
+
 async function sendKey(key) {
     logger.debug(`Send key: ${key}; ${RemoteKeyCode[key]}`);
 
     GetConnection(MyHost).then  ((androidRemote) => {
-        androidRemote.sendKey(RemoteKeyCode[key], RemoteDirection.SHORT)
+        androidRemote.sendKey(RemoteKeyCode[key], RemoteDirection.SHORT);
     })
 };
 
@@ -240,6 +215,9 @@ async function sendAppLink(AppLink) {
                 break;						
             case 'sendAction':
                 sendKey(req.body.theAction);
+                break;            
+            case 'sendPower':
+                sendPower();
                 break;            
             case 'sendAppLink':
                 sendAppLink(req.body.AppLink);
@@ -265,10 +243,8 @@ function GetConnection(MyHost) {
         logger.debug(`Connection not yet created, doing now for: ${MyHost}`)
         getSession(MyHost,MyCert).then ((Connection) => { 
 	        GotSession(Connection);
-            //connectionIndex = Connections.findIndex((con) => {return con.Host == MyHost});
-            //MyandroidRemote = Connections[connectionIndex].Connector
             MyandroidRemote = Connection;
-            resolve(Connection); // MyandroidRemote)
+            resolve(Connection); 
         })
 	}
     else {
