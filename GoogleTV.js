@@ -1,5 +1,8 @@
 import fs from "fs";
+import path from 'path';
+
 import { createLogger,transports,format} from 'winston';
+
 const { combine, timestamp, json } = format;
 const logger = createLogger({
     defaultMeta: { component: 'G-TV' },
@@ -86,6 +89,36 @@ return new Promise(function (resolve, reject) {
   })
 }
 
+async function HandleDownload(MyType,MyElement,res)
+{
+    MyType = MyType.toLowerCase();                  
+    if (["images","irdevices","devices","firmware","cloudstatus"].includes(MyType))
+        {var Path = "/opt/meta/"+MyType
+        var FilePath = Path + "/"+MyElement
+        var ResolvedPath = path.resolve(FilePath);         // Resolve the path that is defined to the actual path
+        if (ResolvedPath.substring(0,Path.length) == Path) // And check to see if the path is not manipulated to download files that aren;t supposed to.
+            {logger.info(`Request to download type  ${MyType} ${MyElement}`)
+            //var myFile = new File(ResolvedPath);
+            if (fs.existsSync(ResolvedPath))
+                {logger.info(`File succesafuly downloaded: ${ResolvedPath}`)
+                    res.download(ResolvedPath)
+                }
+            else
+                {logger.error(`File not found: ${ResolvedPath}`)
+                res.status(404).json({"Status": "fail",error: 404, reason: "File not found"});
+                } 
+            }
+        else   
+            {logger.error(`Manipulation found:  ${MyType} ${MyElement}`)
+            res.status(505).json({"Status": "fail",error: 505, reason: "Invalid path manipulation"});
+            } 
+        }
+    else
+        {logger.error(`Invalid type:  ${MyType} ${MyElement}`)
+        res.status(506).json({"Status": "fail",error: 506, reason: "Type not allowed"});
+        }
+}
+
 async function FillInCodeRequest(code)
 {
     logger.info("Sending code");
@@ -170,10 +203,31 @@ async function main() {
         res.json({"Status": MyResult});        
     });
     server.get("/api",  (req, res, next) => {
-        logger.info(`GTV: ${req.body}`)
-        MyHost = req.body.host
+        logger.info(`GTV: ${req.query}`)
+        MyHost = req.query.host
         logger.info(`GET GoogleTV Call for ${MyHost}`)
          HandleApi(req,res,next)
+    });
+    server.get("/download",  (req, res, next) => {
+        var MyType=req.query.type;
+        logger.info(`GET (download)  ${MyType}`)
+        if (MyType != undefined && MyType != "")
+            {var MyName = req.query.name;
+            if (MyName != undefined && MyName != "")
+                HandleDownload(MyType,MyName,res);
+            else
+                {logger.error(`Missing object name:  ${MyType} ${MyElement}`)
+                res.status(404).json({
+                    error: 404,
+                    message: "Route not found."
+                })    
+                res.status(504).json({"Status": "fail",error:504, reason: "Object name not given"});
+                }
+            }
+        else
+            {logger.error(`Missing object Type:  ${MyType} ${MyElement}`)    
+            res.json({"Status": "fail",reason: "Type of object not given"});        
+        }
     });
     server.post("/api",  (req, res, next) => {
         logger.info(`GTV: ${req.body}`)
